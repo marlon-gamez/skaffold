@@ -143,17 +143,12 @@ func TestGeneratePipeline(t *testing.T) {
 				},
 			},
 		},
-		{
-			description: "fail generating tekton pipeline",
-			tasks:       []*tekton.Task{},
-			shouldErr:   true,
-		},
 	}
 
 	for _, test := range tests {
 		testutil.Run(t, test.description, func(t *testutil.T) {
-			pipeline, err := generatePipeline(test.tasks)
-			t.CheckErrorAndDeepEqual(test.shouldErr, err, test.expectedPipeline, pipeline)
+			pipeline := generatePipeline(test.tasks)
+			t.CheckDeepEqual(test.expectedPipeline, pipeline)
 		})
 	}
 }
@@ -210,11 +205,7 @@ func TestGenerateDeployTask(t *testing.T) {
 		{
 			description: "fail generating deploy task",
 			deployConfig: latest.DeployConfig{
-				DeployType: latest.DeployType{
-					HelmDeploy:      nil,
-					KubectlDeploy:   nil,
-					KustomizeDeploy: nil,
-				},
+				DeployType: latest.DeployType{},
 			},
 			shouldErr: true,
 		},
@@ -237,13 +228,16 @@ func TestGenerateProfile(t *testing.T) {
 		shouldErr       bool
 	}{
 		{
-			description: "successful profile generation",
+			description: "successful profile generation docker",
 			skaffoldConfig: &latest.SkaffoldConfig{
 				Pipeline: latest.Pipeline{
 					Build: latest.BuildConfig{
 						Artifacts: []*latest.Artifact{
 							{
 								ImageName: "test",
+								ArtifactType: latest.ArtifactType{
+									DockerArtifact: &latest.DockerArtifact{},
+								},
 							},
 						},
 					},
@@ -256,11 +250,57 @@ func TestGenerateProfile(t *testing.T) {
 						Artifacts: []*latest.Artifact{
 							{
 								ImageName: "test-pipeline",
+								ArtifactType: latest.ArtifactType{
+									KanikoArtifact: &latest.KanikoArtifact{
+										BuildContext: &latest.KanikoBuildContext{
+											GCSBucket: "skaffold-kaniko",
+										},
+									},
+								},
 							},
 						},
 						BuildType: latest.BuildType{
 							Cluster: &latest.ClusterDetails{
 								PullSecretName: "kaniko-secret",
+							},
+						},
+					},
+				},
+			},
+			shouldErr: false,
+		},
+		{
+			description: "successful profile generation jib",
+			skaffoldConfig: &latest.SkaffoldConfig{
+				Pipeline: latest.Pipeline{
+					Build: latest.BuildConfig{
+						Artifacts: []*latest.Artifact{
+							{
+								ImageName: "test",
+								ArtifactType: latest.ArtifactType{
+									JibMavenArtifact: &latest.JibMavenArtifact{
+										Module:  "test-module",
+										Profile: "test-profile",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			expectedProfile: &latest.Profile{
+				Name: "oncluster",
+				Pipeline: latest.Pipeline{
+					Build: latest.BuildConfig{
+						Artifacts: []*latest.Artifact{
+							{
+								ImageName: "test-pipeline",
+								ArtifactType: latest.ArtifactType{
+									JibMavenArtifact: &latest.JibMavenArtifact{
+										Module:  "test-module",
+										Profile: "test-profile",
+									},
+								},
 							},
 						},
 					},

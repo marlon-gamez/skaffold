@@ -89,8 +89,81 @@ func TestNewPipelineResource(t *testing.T) {
 	}
 	for _, test := range tests {
 		testutil.Run(t, test.description, func(t *testutil.T) {
-			pipeline := NewPipelineResource(test.resourceName, test.resourceType, test.params)
-			t.CheckDeepEqual(test.expected, pipeline)
+			resource := NewPipelineResource(test.resourceName, test.resourceType, test.params)
+			t.CheckDeepEqual(test.expected, resource)
+		})
+	}
+}
+
+func TestNewGitResource(t *testing.T) {
+	tests := []struct {
+		description  string
+		resourceName string
+		gitURL       string
+		expected     *tekton.PipelineResource
+	}{
+		{
+			description: "no params",
+			expected: &tekton.PipelineResource{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "PipelineResource",
+					APIVersion: "tekton.dev/v1alpha1",
+				},
+				Spec: tekton.PipelineResourceSpec{
+					Type: "git",
+					Params: []tekton.ResourceParam{
+						{
+							Name: "url",
+						},
+					},
+				},
+			},
+		}, {
+			description:  "normal params",
+			resourceName: "test-resource",
+			gitURL:       "test-url",
+			expected: &tekton.PipelineResource{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "PipelineResource",
+					APIVersion: "tekton.dev/v1alpha1",
+				},
+				ObjectMeta: metav1.ObjectMeta{
+					Name: "test-resource",
+				},
+				Spec: tekton.PipelineResourceSpec{
+					Type: "git",
+					Params: []tekton.ResourceParam{
+						{
+							Name:  "url",
+							Value: "test-url",
+						},
+					},
+				},
+			},
+		}, {
+			description:  "empty params",
+			resourceName: "",
+			gitURL:       "",
+			expected: &tekton.PipelineResource{
+				TypeMeta: metav1.TypeMeta{
+					Kind:       "PipelineResource",
+					APIVersion: "tekton.dev/v1alpha1",
+				},
+				Spec: tekton.PipelineResourceSpec{
+					Type: "git",
+					Params: []tekton.ResourceParam{
+						{
+							Name: "url",
+						},
+					},
+				},
+			},
+		},
+	}
+	for _, test := range tests {
+		testutil.Run(t, test.description, func(t *testutil.T) {
+			resource := NewGitResource(test.resourceName, test.gitURL)
+			t.CheckDeepEqual(test.expected, resource)
 		})
 	}
 }
