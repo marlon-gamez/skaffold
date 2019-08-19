@@ -18,13 +18,21 @@ package integration
 
 import (
 	"bytes"
+	"context"
 	"io/ioutil"
 	"testing"
 
+	"github.com/GoogleContainerTools/skaffold/integration/examples/bazel/bazel-bazel/external/go_sdk/src/os"
 	"github.com/GoogleContainerTools/skaffold/integration/skaffold"
+	"github.com/GoogleContainerTools/skaffold/pkg/skaffold/config"
+	"github.com/GoogleContainerTools/skaffold/pkg/skaffold/kubectl"
+	"github.com/GoogleContainerTools/skaffold/pkg/skaffold/runner/runcontext"
+
+	kubectx "github.com/GoogleContainerTools/skaffold/pkg/skaffold/kubernetes/context"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func TestGeneratePipeline(t *testing.T) {
+func TestGeneratePipelineOutput(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
@@ -70,6 +78,72 @@ func TestGeneratePipeline(t *testing.T) {
 
 			checkFileContents(t, test.dir+"/expectedSkaffold.yaml", test.dir+"/skaffold.yaml")
 			checkFileContents(t, test.dir+"/expectedPipeline.yaml", test.dir+"/pipeline.yaml")
+		})
+	}
+}
+
+func TestGeneratePipelineE2E(t *testing.T) {
+	tests := []struct {
+		description string
+		dir         string
+		responses   []byte
+		pods        []string
+	}{
+		{
+			description: "getting-started",
+			dir:         "testdata/generate_pipeline/getting_started",
+			responses:   []byte("y"),
+			pods:        []string{"getting-started"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.description, func(t *testing.T) {
+			skaffoldEnv := []string{
+				"PIPELINE_GIT_URL=https://github.com/GoogleContainerTools/skaffold.git",
+				"PIPELINE_SKAFFOLD_VERSION=",
+			}
+			skaffold.GeneratePipeline().WithStdin([]byte("y\n")).WithEnv(skaffoldEnv).InDir(test.dir).RunOrFail(t)
+
+			// run pipeline on cluster
+			ns, client, deleteNs := SetupNamespace(t)
+			defer deleteNs()
+
+			cfg, err := kubectx.CurrentConfig()
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			cli := kubectl.NewFromRunContext(&runcontext.RunContext{
+				KubeContext: cfg.CurrentContext,
+				Opts: config.SkaffoldOptions{
+					Namespace: ns.Name,
+				},
+			})
+			// kubectl apply -f pipeline.yaml
+			if err := cli.Run(context.Background(), os.Stdin, os.Stdout, "apply", "-f", "pipeline.yaml"); err != nil {
+				t.Fatal(err)
+			}
+
+			// kubectl apply -f pipelinerun.yaml
+			if err := cli.Run(context.Background(), os.Stdin, os.Stdout, "apply", "-f", "pipelinerun.yaml"); err != nil {
+				t.Fatal(err)
+			}
+
+			// wait for pod that comes from deployment
+			client.WaitForPodsReady(test.pods...)
+
+			podList, err := client.client.CoreV1().Pods(ns.Name).List(metav1.ListOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			for _, item := range podList.Items {
+				if item.Name == test.pods[0] {
+					return
+				}
+			}
+
+			t.Fatal()
 		})
 	}
 }
