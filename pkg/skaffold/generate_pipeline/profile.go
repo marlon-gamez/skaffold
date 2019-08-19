@@ -32,15 +32,18 @@ import (
 	yamlv2 "gopkg.in/yaml.v2"
 )
 
-func CreateSkaffoldProfile(out io.Writer, config *latest.SkaffoldConfig, configFile string) (*latest.Profile, error) {
+func CreateSkaffoldProfile(out io.Writer, config *latest.SkaffoldConfig, configFile string) ([]*latest.Profile, error) {
 	reader := bufio.NewReader(os.Stdin)
+
+	var profiles []*latest.Profile
 
 	// Check for existing oncluster profile, if none exists then prompt to create one
 	color.Default.Fprintln(out, "Checking for oncluster skaffold profile...")
 	for _, profile := range config.Profiles {
 		if profile.Name == "oncluster" {
 			color.Default.Fprintln(out, "profile \"oncluster\" found")
-			return &profile, nil
+			profiles = append(profiles, &profile)
+			return profiles, nil
 		}
 	}
 
@@ -101,7 +104,8 @@ confirmLoop:
 		return nil, errors.Wrap(err, "writing profile to skaffold config")
 	}
 
-	return profile, nil
+	profiles = append(profiles, profile)
+	return profiles, nil
 }
 
 func generateProfile(out io.Writer, config *latest.SkaffoldConfig) (*latest.Profile, error) {
