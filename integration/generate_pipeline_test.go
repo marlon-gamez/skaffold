@@ -20,9 +20,9 @@ import (
 	"bytes"
 	"context"
 	"io/ioutil"
+	"os"
 	"testing"
 
-	"github.com/GoogleContainerTools/skaffold/integration/examples/bazel/bazel-bazel/external/go_sdk/src/os"
 	"github.com/GoogleContainerTools/skaffold/integration/skaffold"
 	"github.com/GoogleContainerTools/skaffold/pkg/skaffold/config"
 	"github.com/GoogleContainerTools/skaffold/pkg/skaffold/kubectl"
@@ -99,8 +99,7 @@ func TestGeneratePipelineE2E(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.description, func(t *testing.T) {
 			skaffoldEnv := []string{
-				"PIPELINE_GIT_URL=https://github.com/GoogleContainerTools/skaffold.git",
-				"PIPELINE_SKAFFOLD_VERSION=",
+				"PIPELINE_GIT_URL=https://github.com/marlon-gamez/getting-started.git",
 			}
 			skaffold.GeneratePipeline().WithStdin([]byte("y\n")).WithEnv(skaffoldEnv).InDir(test.dir).RunOrFail(t)
 
@@ -119,13 +118,14 @@ func TestGeneratePipelineE2E(t *testing.T) {
 					Namespace: ns.Name,
 				},
 			})
+
 			// kubectl apply -f pipeline.yaml
-			if err := cli.Run(context.Background(), os.Stdin, os.Stdout, "apply", "-f", "pipeline.yaml"); err != nil {
+			if err := cli.Run(context.Background(), os.Stdin, os.Stdout, "apply", "-f", test.dir+"/pipeline.yaml"); err != nil {
 				t.Fatal(err)
 			}
 
 			// kubectl apply -f pipelinerun.yaml
-			if err := cli.Run(context.Background(), os.Stdin, os.Stdout, "apply", "-f", "pipelinerun.yaml"); err != nil {
+			if err := cli.Run(context.Background(), os.Stdin, os.Stdout, "apply", "-f", test.dir+"/pipelinerun.yaml"); err != nil {
 				t.Fatal(err)
 			}
 
