@@ -19,8 +19,9 @@ package integration
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io/ioutil"
-	"os"
+	"strings"
 	"testing"
 
 	"github.com/GoogleContainerTools/skaffold/integration/skaffold"
@@ -29,7 +30,6 @@ import (
 	"github.com/GoogleContainerTools/skaffold/pkg/skaffold/runner/runcontext"
 
 	kubectx "github.com/GoogleContainerTools/skaffold/pkg/skaffold/kubernetes/context"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 func TestGeneratePipelineOutput(t *testing.T) {
@@ -97,15 +97,24 @@ func TestGeneratePipelineE2E(t *testing.T) {
 		},
 	}
 	for _, test := range tests {
+
+		if testing.Short() {
+			t.Skip("skipping integration test")
+		}
+		if !ShouldRunGCPOnlyTests() {
+			t.Skip("skipping gcp only test")
+		}
+
 		t.Run(test.description, func(t *testing.T) {
 			skaffoldEnv := []string{
 				"PIPELINE_GIT_URL=https://github.com/marlon-gamez/getting-started.git",
+				"PIPELINE_SKAFFOLD_VERSION=v0.35.0",
 			}
 			skaffold.GeneratePipeline().WithStdin([]byte("y\n")).WithEnv(skaffoldEnv).InDir(test.dir).RunOrFail(t)
 
 			// run pipeline on cluster
-			ns, client, deleteNs := SetupNamespace(t)
-			defer deleteNs()
+			ns, client, _ := SetupNamespace(t)
+			//defer deleteNs()
 
 			cfg, err := kubectx.CurrentConfig()
 			if err != nil {
@@ -119,31 +128,25 @@ func TestGeneratePipelineE2E(t *testing.T) {
 				},
 			})
 
+			copySecretToNamespace(t, cli, "default", "kaniko-secret")
+
 			// kubectl apply -f pipeline.yaml
-			if err := cli.Run(context.Background(), os.Stdin, os.Stdout, "apply", "-f", test.dir+"/pipeline.yaml"); err != nil {
+			out, err := cli.RunOut(context.Background(), "apply", "-f", test.dir+"/pipeline.yaml")
+			if err != nil {
 				t.Fatal(err)
 			}
+			fmt.Println(string(out))
 
 			// kubectl apply -f pipelinerun.yaml
-			if err := cli.Run(context.Background(), os.Stdin, os.Stdout, "apply", "-f", test.dir+"/pipelinerun.yaml"); err != nil {
+			out, err = cli.RunOut(context.Background(), "apply", "-f", test.dir+"/pipelinerun.yaml")
+			if err != nil {
 				t.Fatal(err)
 			}
+			fmt.Println(string(out))
 
 			// wait for pod that comes from deployment
 			client.WaitForPodsReady(test.pods...)
 
-			podList, err := client.client.CoreV1().Pods(ns.Name).List(metav1.ListOptions{})
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			for _, item := range podList.Items {
-				if item.Name == test.pods[0] {
-					return
-				}
-			}
-
-			t.Fatal()
 		})
 	}
 }
@@ -160,5 +163,28 @@ func checkFileContents(t *testing.T, wantFile, gotFile string) {
 
 	if !bytes.Equal(wantContents, gotContents) {
 		t.Errorf("Contents of %s did not match those of %s\ngot:%s\nwant:%s", gotFile, wantFile, string(gotContents), string(wantContents))
+	}
+}
+
+func copySecretToNamespace(t *testing.T, cli *kubectl.CLI, from, secretName string) {
+	pipeOut := bytes.NewBuffer([]byte{})
+	pipeIn := bytes.NewBuffer([]byte{})
+
+	getSecret := cli.CommandWithNamespaceArg(context.Background(), "get", from, "secret", secretName, "-o", "yaml")
+	applySecret := cli.Command(context.Background(), "apply", "-f", "-")
+
+	getSecret.Stdout = pipeOut
+	applySecret.Stdin = pipeIn
+
+	t.Log("Running kubectl get secret")
+	if err := getSecret.Run(); err != nil {
+		t.Fatal(err)
+	}
+
+	pipeIn.WriteString(strings.Replace(string(pipeOut.Bytes()), "namespace: default", fmt.Sprintf("namespace: %s", cli.Namespace), 1))
+
+	t.Log("Running kubectl apply")
+	if err := applySecret.Run(); err != nil {
+		t.Fatal(err)
 	}
 }
